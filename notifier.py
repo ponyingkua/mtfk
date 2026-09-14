@@ -1,18 +1,19 @@
 """
-Kirim notifikasi sinyal ke Telegram, dengan cooldown supaya sinyal
-(symbol, signal_type, direction) yang sama tidak spam tiap jam.
+Kirim notifikasi sinyal ke Telegram.
+
+CATATAN MODE SINGLE-RUN: tidak ada cooldown antar-run di sini. Tiap run
+GitHub Actions mulai dari container bersih (tidak ada memori dari run
+sebelumnya), jadi sinyal yang sama bisa saja terkirim lagi di run berikutnya
+kalau kondisi pasarnya masih memicu sinyal itu -- ini disengaja/disepakati,
+bukan bug.
 """
 
-import time
 import logging
 import requests
 
 import config
 
 logger = logging.getLogger("binance_scanner.notifier")
-
-# cooldown_state: { (symbol, signal_type, direction): last_sent_unix_timestamp }
-_cooldown_state = {}
 
 _SIGNAL_LABELS = {
     "funding_divergence": "Funding Rate Divergence",
@@ -30,18 +31,6 @@ _DIRECTION_EMOJI = {
     "CAPITULATION": "⚪",
     "WATCH": "🔵",
 }
-
-
-def _is_in_cooldown(key):
-    last_sent = _cooldown_state.get(key)
-    if last_sent is None:
-        return False
-    elapsed_hours = (time.time() - last_sent) / 3600.0
-    return elapsed_hours < config.SIGNAL_COOLDOWN_HOURS
-
-
-def _mark_sent(key):
-    _cooldown_state[key] = time.time()
 
 
 def format_signal_message(signal):
@@ -76,30 +65,12 @@ def send_telegram_message(text):
 
 
 def notify_signal(signal):
-    """
-    Kirim satu sinyal ke Telegram jika belum dalam masa cooldown.
-    Mengembalikan True jika benar-benar dikirim, False jika di-skip (cooldown) atau gagal.
-    """
-    key = (signal["symbol"], signal["signal_type"], signal["direction"])
-    if _is_in_cooldown(key):
-        logger.info(f"Skip (cooldown): {key}")
-        return False
-
+    """Kirim satu sinyal ke Telegram. Mengembalikan True jika berhasil terkirim."""
     message = format_signal_message(signal)
     sent = send_telegram_message(message)
     if sent:
-        _mark_sent(key)
-        logger.info(f"Terkirim: {key}")
+        logger.info(f"Terkirim: {signal['symbol']} / {signal['signal_type']} / {signal['direction']}")
     return sent
-
-
-def notify_startup(futures_count, spot_count):
-    text = (
-        "🚀 <b>Binance Multi-Market Scanner aktif</b>\n"
-        f"Memantau {futures_count} pair futures & {spot_count} pair spot (USDT).\n"
-        f"Interval scan: {config.SCAN_INTERVAL_SECONDS // 60} menit."
-    )
-    send_telegram_message(text)
 
 
 def notify_error(error_message):

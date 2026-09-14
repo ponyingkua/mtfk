@@ -2,7 +2,8 @@
 
 Scanner sinyal untuk **Binance Futures + Spot** yang fokus pada data non-mainstream
 (funding rate, open interest, long/short ratio, basis futures-spot) — bukan chart
-pattern/teknikal biasa. Notifikasi via Telegram bot.
+pattern/teknikal biasa. Notifikasi via Telegram bot. Dijalankan otomatis lewat
+**GitHub Actions** (tidak perlu server/VPS sendiri) — cocok dikelola dari HP.
 
 ## Sinyal yang dideteksi
 
@@ -17,42 +18,51 @@ pattern/teknikal biasa. Notifikasi via Telegram bot.
 **Cross-market (butuh simbol yang ada di Futures & Spot):**
 5. **Spot-Futures Basis Anomaly** — selisih harga futures vs spot melebar jauh dari kebiasaan simbol itu sendiri.
 
-## Instalasi
+## Setup (sekali saja, dari HP browser GitHub juga bisa)
 
-```bash
-pip install -r requirements.txt
-```
+### 1. Buat Telegram bot (kalau belum punya)
+Chat ke [@BotFather](https://t.me/BotFather) di Telegram, `/newbot`, ikuti instruksinya,
+simpan **bot token** yang diberikan. Untuk **chat ID**, kirim pesan apa saja ke bot kamu,
+lalu buka `https://api.telegram.org/bot<TOKEN>/getUpdates` di browser — cari angka `"id"`
+di dalam objek `"chat"`.
 
-Hanya butuh library `requests` — sengaja tanpa numpy/pandas supaya ringan dijalankan di VPS kecil.
+### 2. Simpan token sebagai GitHub Secrets
+Di repo ini: **Settings → Secrets and variables → Actions → New repository secret**.
+Tambahkan dua secret:
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-## Konfigurasi
+### 3. Aktifkan workflow
+Workflow di `.github/workflows/scanner.yml` akan otomatis jalan tiap jam (menit ke-0,
+waktu UTC) begitu ter-push ke branch `main`. Untuk repo baru kadang GitHub minta
+konfirmasi aktivasi workflow sekali di tab **Actions**.
 
-Set environment variable untuk bot Telegram kamu:
+### 4. Test manual (opsional, tanpa nunggu jadwal)
+Tab **Actions** → pilih workflow **Binance Multi-Market Scanner** → tombol
+**Run workflow**. Bisa dilakukan langsung dari aplikasi GitHub di HP.
 
-```bash
-export TELEGRAM_BOT_TOKEN="123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-export TELEGRAM_CHAT_ID="123456789"
-```
+## Cara kerja mode GitHub Actions (penting dipahami)
 
-Atau edit langsung nilainya di `config.py`.
+Scanner ini jalan sebagai **single-run**: tiap kali dipicu (oleh cron atau manual),
+script menjalankan satu siklus scan penuh lalu langsung selesai/keluar — bukan proses
+yang looping selamanya. Ini konsekuensinya:
 
-Semua threshold sinyal (persentil, z-score, dll) ada di `config.py` — silakan
-di-tuning sesuai preferensi, mengikuti gaya kerja backtest-driven yang biasa dipakai
-di proyek vSynapse (ubah satu parameter, amati dampaknya, iterasi).
-
-## Menjalankan
-
-```bash
-python3 scanner.py
-```
-
-Scanner akan:
-1. Kirim pesan startup ke Telegram (jumlah pair yang dipantau)
-2. Loop selamanya, scan semua pair USDT di Futures & Spot tiap 1 jam
-3. Kirim tiap sinyal yang terpicu ke Telegram, dengan cooldown 6 jam per (simbol, jenis sinyal, arah) supaya tidak spam
-
-Untuk menjalankan terus-menerus di background di server, disarankan pakai `systemd`,
-`screen`/`tmux`, atau `nohup python3 scanner.py &`.
+- **Tidak ada cooldown antar-run.** Tiap run mulai dari container GitHub Actions yang
+  bersih, tidak ada memori dari run sebelumnya. Kalau kondisi pasar masih memicu sinyal
+  yang sama seperti satu jam lalu, sinyal itu akan dikirim ulang ke Telegram. Ini
+  disepakati sebagai trade-off dari mode ini, bukan bug.
+- **Interval scan diatur oleh cron di YAML**, bukan oleh kode Python (`config.py` tidak
+  lagi punya `SCAN_INTERVAL_SECONDS`). Untuk ubah interval, edit baris `cron:` di
+  `.github/workflows/scanner.yml`.
+- **Estimasi durasi tiap run**: karena scan mencakup semua pair USDT futures+spot,
+  satu run bisa memakan beberapa menit (tergantung jumlah pair aktif saat ini). Ada
+  `timeout-minutes: 20` di workflow sebagai guard supaya job tidak menggantung lama
+  kalau Binance rate-limit.
+- **Risiko rate-limit lebih tinggi dari VPS pribadi**: GitHub Actions shared runner
+  berbagi rentang IP dengan banyak job lain di dunia, jadi kemungkinan kena 429/418
+  dari Binance sedikit lebih tinggi. Sudah ada retry otomatis di `binance_client.py`
+  untuk menangani ini; kalau retry tetap gagal, kamu akan dapat notifikasi error di
+  Telegram (atau bisa dicek di tab Actions → run yang gagal, log lengkap ada di sana).
 
 ## Struktur file
 
@@ -60,8 +70,15 @@ Untuk menjalankan terus-menerus di background di server, disarankan pakai `syste
 - `binance_client.py` — wrapper endpoint publik Binance REST (tanpa API key)
 - `stats_utils.py` — fungsi statistik kecil (percentile, z-score) tanpa dependency numpy
 - `signals.py` — logic 5 sinyal
-- `notifier.py` — format pesan & pengiriman Telegram + cooldown
-- `scanner.py` — entry point, loop utama
+- `notifier.py` — format pesan & pengiriman Telegram
+- `scanner.py` — entry point, satu siklus scan lalu keluar
+- `.github/workflows/scanner.yml` — jadwal cron & konfigurasi job GitHub Actions
+
+## Tuning dari HP
+
+Semua threshold sinyal (persentil, z-score, dll) ada di `config.py`. Bisa diedit
+langsung dari aplikasi GitHub di HP (buka file → ikon pensil → edit → commit ke
+`main`) — perubahan otomatis dipakai di run berikutnya, tidak perlu setup ulang apa pun.
 
 ## Catatan penting
 
@@ -74,9 +91,10 @@ Untuk menjalankan terus-menerus di background di server, disarankan pakai `syste
   bisa kurang akurat untuk koin yang baru listing.
 - **Alpha (token pre-listing) sengaja di-skip** dari scope proyek ini sesuai permintaan —
   bisa ditambahkan sebagai modul terpisah nanti kalau dibutuhkan.
-- Ini bukan proyek vSynapse — proyek baru yang berdiri sendiri, fokus pada
-  data non-chart yang tidak dipakai vSynapse.
-- Belum diuji terhadap Binance API secara live (sandbox pembuatan tidak punya akses
-  ke domain api.binance.com/fapi.binance.com) — logic sudah divalidasi lewat unit
-  test dengan data dummy yang meniru struktur response asli Binance, tapi sebaiknya
-  jalankan dulu 1-2 siklus manual dan cek log/Telegram sebelum dibiarkan looping lama.
+- Ini proyek berdiri sendiri, terpisah dari proyek vSynapse — fokus pada data
+  non-chart yang tidak dipakai vSynapse.
+- Logic sinyal sudah divalidasi lewat unit test dengan data dummy yang meniru
+  struktur response asli Binance, tapi **belum pernah dijalankan live** terhadap
+  Binance API sungguhan. Sebaiknya jalankan dulu via **Run workflow** manual 1-2 kali
+  dan cek hasil di tab Actions + Telegram, sebelum membiarkan jadwal cron berjalan
+  tanpa pengawasan.

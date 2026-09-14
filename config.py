@@ -15,11 +15,15 @@ SPOT_BASE_URL = "https://api.binance.com"
 
 # Jeda antar request (detik) untuk menghindari rate limit Binance.
 # Binance futures weight limit umumnya 2400/menit, spot 6000/menit (1200 IP weight/menit utk beberapa endpoint).
-# Loop di scanner ini per-simbol, jadi delay kecil sudah cukup aman untuk ratusan simbol.
+# PENTING (mode GitHub Actions): shared runner GitHub berbagi IP dengan banyak job lain di
+# seluruh dunia, jadi risiko kena rate-limit (429) atau IP-ban sementara (418) LEBIH TINGGI
+# dibanding jalan dari VPS pribadi. Delay ini sengaja dijaga tidak terlalu kecil.
 REQUEST_DELAY_SEC = 0.15
 
-# ── Scan schedule ─────────────────────────────────────────
-SCAN_INTERVAL_SECONDS = 60 * 60  # 1 jam
+# NOTE: interval scan (tiap 1 jam) SEKARANG diatur oleh cron di
+# .github/workflows/scanner.yml, BUKAN oleh kode Python -- karena scanner.py
+# di mode single-run cuma jalan satu siklus lalu keluar. Tidak ada
+# SCAN_INTERVAL_SECONDS lagi di sini.
 
 # Hanya scan pair yang berakhiran ini (quote asset)
 QUOTE_ASSET_FILTER = "USDT"
@@ -60,7 +64,7 @@ BASIS_HISTORY_LIMIT = 48          # berapa titik historis basis dipakai utk base
 BASIS_ZSCORE_THRESHOLD = 2.0      # basis saat ini dianggap anomali jika |z-score| >= ini
 MIN_BASIS_PCT_ABS = 0.15          # filter tambahan: basis absolut minimal sekian % (hindari noise di basis yang memang selalu kecil)
 
-# ── Cooldown notifikasi ───────────────────────────────────
-# Supaya tidak spam Telegram dengan sinyal yang sama berulang tiap jam,
-# satu (simbol, jenis_sinyal, arah) yang sama tidak dikirim ulang dalam N jam.
-SIGNAL_COOLDOWN_HOURS = 6
+# NOTE: tidak ada lagi SIGNAL_COOLDOWN_HOURS -- di mode single-run (GitHub Actions),
+# tiap run mulai dari container bersih tanpa memori run sebelumnya, jadi cooldown
+# in-memory tidak ada gunanya. Sinyal yang kondisinya masih terpicu akan tetap
+# dikirim ulang tiap jam (disepakati, bukan bug).

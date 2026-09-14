@@ -1,21 +1,29 @@
 """
-Entry point scanner. Jalankan dengan:
+Entry point scanner -- MODE SINGLE-RUN untuk GitHub Actions.
+
+Jalankan dengan:
 
     python3 scanner.py
 
-Scanner ini looping selamanya, tiap SCAN_INTERVAL_SECONDS (default 1 jam):
+Script ini menjalankan SATU siklus scan lalu keluar (exit 0 sukses / exit 1 gagal).
+Dipicu berulang oleh GitHub Actions cron (lihat .github/workflows/scanner.yml),
+BUKAN proses looping/daemon -- karena tiap run GitHub Actions memang mulai dari
+container baru yang bersih (tidak ada memori antar run), jadi tidak ada cooldown
+antar-run: tiap sinyal yang terpicu pada satu run akan selalu dikirim ke Telegram
+pada run itu, meski simbol/jenis sinyalnya sama dengan run sebelumnya.
+
+Alur satu siklus:
   1. Ambil semua pair USDT di Futures & Spot
   2. Untuk tiap pair futures -> jalankan 3 sinyal futures
   3. Untuk tiap pair spot    -> jalankan 1 sinyal volume spike
   4. Untuk pair yang ada di KEDUA market (futures & spot dgn simbol sama) -> jalankan basis anomaly
-  5. Kirim tiap sinyal yang terpicu ke Telegram (dengan cooldown)
+  5. Kirim tiap sinyal yang terpicu ke Telegram
 
-Set env var TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID sebelum menjalankan, atau
-edit langsung di config.py.
+Env var TELEGRAM_BOT_TOKEN & TELEGRAM_CHAT_ID wajib di-set (lewat GitHub Secrets
+saat dijalankan di Actions, atau manual di terminal untuk test lokal).
 """
 
 import sys
-import time
 import logging
 import traceback
 
@@ -27,10 +35,7 @@ import notifier
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("scanner.log"),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],  # cukup stdout -- GitHub Actions sudah menyimpan log run
 )
 logger = logging.getLogger("binance_scanner.main")
 
@@ -75,6 +80,7 @@ def run_cross_market_scan(common_symbols):
 
 
 def run_one_scan_cycle():
+    """Mengembalikan True jika siklus berhasil dijalankan (walau 0 sinyal), False jika gagal total."""
     logger.info("=== Mulai siklus scan ===")
 
     futures_symbols = client.get_futures_usdt_symbols()
@@ -82,8 +88,8 @@ def run_one_scan_cycle():
     logger.info(f"Ditemukan {len(futures_symbols)} pair futures USDT, {len(spot_symbols)} pair spot USDT")
 
     if not futures_symbols and not spot_symbols:
-        logger.error("Tidak dapat mengambil daftar simbol dari Binance (kemungkinan masalah jaringan/API). Lewati siklus ini.")
-        return
+        logger.error("Tidak dapat mengambil daftar simbol dari Binance (kemungkinan masalah jaringan/API).")
+        return False
 
     all_triggered = []
 
@@ -104,30 +110,22 @@ def run_one_scan_cycle():
         if notifier.notify_signal(sig):
             sent_count += 1
 
-    logger.info(f"Sinyal dikirim ke Telegram: {sent_count} (sisanya di-skip krn cooldown)")
+    logger.info(f"Sinyal dikirim ke Telegram: {sent_count}")
     logger.info("=== Selesai siklus scan ===")
+    return True
 
 
 def main():
-    logger.info("Binance Multi-Market Scanner dimulai")
+    logger.info("Binance Multi-Market Scanner (single-run) dimulai")
+    try:
+        success = run_one_scan_cycle()
+    except Exception:
+        error_trace = traceback.format_exc()
+        logger.error(f"Error tak terduga di siklus scan:\n{error_trace}")
+        notifier.notify_error(error_trace[-500:])  # potong biar tidak kepanjangan di Telegram
+        sys.exit(1)
 
-    futures_symbols = client.get_futures_usdt_symbols()
-    spot_symbols = client.get_spot_usdt_symbols()
-    notifier.notify_startup(len(futures_symbols), len(spot_symbols))
-
-    while True:
-        cycle_start = time.time()
-        try:
-            run_one_scan_cycle()
-        except Exception:
-            error_trace = traceback.format_exc()
-            logger.error(f"Error tak terduga di siklus scan:\n{error_trace}")
-            notifier.notify_error(error_trace[-500:])  # potong biar tidak kepanjangan di Telegram
-
-        elapsed = time.time() - cycle_start
-        sleep_time = max(0, config.SCAN_INTERVAL_SECONDS - elapsed)
-        logger.info(f"Siklus selesai dalam {elapsed:.1f}s, tidur {sleep_time:.1f}s sebelum siklus berikutnya")
-        time.sleep(sleep_time)
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":
