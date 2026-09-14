@@ -30,7 +30,7 @@ MIN_PRICE_CHANGE_PCT = 1.2
 STRONG_PRICE_CHANGE_PCT = 3.0
 
 MIN_SCORE_TO_SEND = 72
-MAX_SIGNALS_PER_RUN = 8
+MAX_SIGNALS_PER_RUN = 3
 
 logging.basicConfig(
     level=logging.INFO,
@@ -342,7 +342,7 @@ def run_scan(symbols: List[str]) -> List[Dict]:
 def format_signal(sig: Dict) -> str:
     sym = html.escape(sig["symbol"])
     direction = sig["direction"]
-    emoji = "🟢" if direction == "LONG" else "🔴"
+    emoji = "💸" if direction == "LONG" else "💸"
     score = sig["score"]
     rvol = sig["primary_rvol"]
     z = sig["primary_z"]
