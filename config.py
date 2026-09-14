@@ -11,7 +11,7 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "GANTI_DENGAN_CHAT_ID")
 
 # ── Binance API ───────────────────────────────────────────
 FUTURES_BASE_URL = "https://fapi.binance.com"
-SPOT_BASE_URL = "https://api.binance.com"
+SPOT_BASE_URL = "https://data-api.binance.vision"
 
 # Jeda antar request (detik) untuk menghindari rate limit Binance.
 # Binance futures weight limit umumnya 2400/menit, spot 6000/menit (1200 IP weight/menit utk beberapa endpoint).
