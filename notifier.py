@@ -8,7 +8,6 @@ kalau kondisi pasarnya masih memicu sinyal itu -- ini disengaja/disepakati,
 bukan bug.
 """
 
-import html
 import logging
 import requests
 
@@ -38,17 +37,12 @@ def format_signal_message(signal):
     label = _SIGNAL_LABELS.get(signal["signal_type"], signal["signal_type"])
     emoji = _DIRECTION_EMOJI.get(signal["direction"], "⚡")
 
-    # Semua nilai dinamis di-escape dulu -- parse_mode="HTML" bakal nganggep
-    # karakter mentah <, >, & di dalamnya sebagai awal tag, dan kalau gak
-    # valid sebagai tag HTML, Telegram nolak SELURUH pesan dengan 400.
-    # signal["reason"] paling rawan karena isinya teks perbandingan angka
-    # (mis. "funding 0.03% > persentil ke-95 (0.02%)").
     lines = [
-        f"{emoji} <b>{html.escape(label)}</b>",
-        f"Simbol: <b>{html.escape(signal['symbol'])}</b> ({html.escape(signal['market'])})",
-        f"Arah: <b>{html.escape(signal['direction'])}</b>",
+        f"{emoji} <b>{label}</b>",
+        f"Simbol: <b>{signal['symbol']}</b> ({signal['market']})",
+        f"Arah: <b>{signal['direction']}</b>",
         "",
-        html.escape(signal["reason"]),
+        signal["reason"],
     ]
     return "\n".join(lines)
 
@@ -66,12 +60,7 @@ def send_telegram_message(text):
         resp.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
-        # e.response.text berisi body JSON asli dari Telegram (field "description"),
-        # ini yang sebenarnya kasih tahu alasan pasti 400-nya -- sebelumnya
-        # cuma dicetak "400 Client Error: Bad Request for url: ..." yang gak
-        # informatif sama sekali.
-        detail = e.response.text if e.response is not None else str(e)
-        logger.error(f"Gagal kirim pesan Telegram: {detail}")
+        logger.error(f"Gagal kirim pesan Telegram: {e}")
         return False
 
 
@@ -85,5 +74,5 @@ def notify_signal(signal):
 
 
 def notify_error(error_message):
-    text = f"⚠️ <b>Scanner error</b>\n<code>{html.escape(error_message)}</code>"
+    text = f"⚠️ <b>Scanner error</b>\n<code>{error_message}</code>"
     send_telegram_message(text)
