@@ -1,0 +1,33 @@
+name: Binance Multi-Market Scanner
+
+on:
+  schedule:
+    # Cron GitHub Actions pakai UTC. Ini jalan tiap awal jam (menit ke-0), tiap jam.
+    - cron: "0 * * * *"
+  # Supaya bisa dipicu manual dari tab Actions (berguna untuk test dari HP tanpa nunggu jadwal)
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # Guard supaya kalau ada masalah (mis. rate-limit Binance bikin retry lama),
+    # job tidak menggantung lama-lama dan menghabiskan quota Actions minutes.
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Jalankan scanner
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 scanner.py
