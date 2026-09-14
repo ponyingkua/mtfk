@@ -342,7 +342,7 @@ def run_scan(symbols: List[str]) -> List[Dict]:
 def format_signal(sig: Dict) -> str:
     sym = html.escape(sig["symbol"])
     direction = sig["direction"]
-    emoji = "💸" if direction == "LONG" else "💸"
+    emoji = "🟢" if direction == "LONG" else "🔴"
     score = sig["score"]
     rvol = sig["primary_rvol"]
     z = sig["primary_z"]
@@ -385,7 +385,7 @@ def notify_signals(signals: List[Dict]):
         logger.info("Tidak ada sinyal berkualitas yang memenuhi threshold.")
         return
 
-    header = f"⚡ <b>mtfk</b> · {len(signals)} sinyal terbaik"
+    header = f"💸 <b>mtfk</b> · {len(signals)} lapor pak!"
     send_telegram(header)
     time.sleep(0.3)
 
